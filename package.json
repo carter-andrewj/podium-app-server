@@ -1,0 +1,32 @@
+{
+  "name": "app-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "npm run sync && nodemon --exec babel-node src/index.js",
+    "build": "npm run sync && babel src -d build",
+    "serve": "node build/index.js",
+    "sync": "aws s3 sync ./data s3://podium-config --exclude '*DS_Store'"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@babel/polyfill": "^7.4.4",
+    "aws-sdk": "^2.476.0",
+    "express": "^4.17.1",
+    "immutable": "^4.0.0-rc.12",
+    "lokijs": "^1.5.6",
+    "radixdlt": "^1.0.9-alpha",
+    "socket.io": "^2.2.0",
+    "uuid": "^3.3.2"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.4.4",
+    "@babel/core": "^7.4.5",
+    "@babel/node": "^7.4.5",
+    "@babel/preset-env": "^7.4.5",
+    "@babel/register": "^7.4.4",
+    "nodemon": "^1.19.1"
+  }
+}
