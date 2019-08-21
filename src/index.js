@@ -1,5 +1,12 @@
+import dotenv from 'dotenv';
+
 import Podium from './podium';
 
+
+
+
+// Set up local environment
+dotenv.config()
 
 // Ensure global variables are set
 if (!process.env.AWS_ACCESS_KEY) {
