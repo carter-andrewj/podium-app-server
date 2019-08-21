@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "npm run sync && nodemon --exec babel-node src/index.js",
+    "go": "nodemon --exec babel-node src/index.js",
     "build": "npm run sync && babel src -d build",
     "serve": "node build/index.js",
     "sync": "aws s3 sync ./data s3://podium-config --exclude '*DS_Store'"
