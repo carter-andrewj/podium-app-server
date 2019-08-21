@@ -132,6 +132,9 @@ export default class Podium {
 					fromJS(JSON.parse(item.Body.toString('utf-8')))
 				))
 				.catch(error => {
+					console.log(process.env.AWS_ACCESS_KEY)
+					console.log(process.env.AWS_SECRET_ACCESS_KEY)
+					console.error(error)
 					if (error.code = "NoSuchKey") {
 						resolve(null)
 					} else {
@@ -180,7 +183,7 @@ export default class Podium {
 		return new Promise((resolve, reject) => {
 			this.fromStore("config")
 				.then(config => {
-					console.log("   * Loaded Config file")
+					console.log("   * Loaded Config file", config)
 					this.config = config
 					return Promise.all([
 						this.fromStore("live"),
