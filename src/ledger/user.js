@@ -18,6 +18,8 @@ export default class User {
 	constructor(ledger, address) {
 		this.ledger = ledger
 		this.address = address
+
+		this.keyIn = this.keyIn.bind(this)
 	}
 
 
@@ -25,37 +27,34 @@ export default class User {
 
 // SIGN IN
 
-	signIn(id, pw) {
-		this.ledger.debugOut("Signing In: ", id, pw)
+	keyIn(keyPair) {
+		const ident = new RadixSimpleIdentity(keyPair);
+		if (!this.address) {
+			this.address = ident.account.getAddress();
+		}
+		return new ActiveUser(this.ledger, ident)
+	}
+
+	signIn(passphrase) {
+		this.ledger.debugOut("Signing In: ", passphrase)
 		return new Promise((resolve, reject) => {
 			this.ledger
 
 				// Retrieve keypair
-				.getLatest(this.ledger.path.forKeystoreOf(id, pw))
+				.getLatest(this.ledger.path.forKeystoreOf(passphrase))
 
 				// Decrypt keypair
 				.then(encryptedKey => {
 					this.ledger.debugOut("Received Keypair")
-					return RadixKeyStore
-						.decryptKey(encryptedKey.toJS(), pw)
+					return RadixKeyStore.decryptKey(encryptedKey.toJS(), passphrase)
 				})
 
-				// Construct and save identity from keypair
-				.then(keyPair => {
-					this.ledger.debugOut("Decrypted Keypair: ", keyPair)
-					const ident = new RadixSimpleIdentity(keyPair);
-					resolve(this.activeUser(ident))
-				})
-
-				// Handle errors
+				// Create identity
+				.then(this.keyIn)
+				.then(resolve)
 				.catch(reject)
 
 		})
-	}
-
-
-	activeUser(identity) {
-		return new ActiveUser(this.ledger, identity)
 	}
 
 
@@ -155,9 +154,7 @@ export default class User {
 		this.ledger.debugOut(`Added a callback for each post by User-${this.address}`)
 		this.ledger.openChannel(
 			this.ledger.path.forPostsBy(this.address),
-			record => Promise
-				.resolve(callback(record.get("address")))
-				.catch(console.error)
+			record => callback(record.get("address"))
 		)
 	}
 

@@ -43,14 +43,76 @@ export default class Podium {
 
 		// Sessions
 		this.sessions = Map()
+		this.feeds = Map()
 
 		// Methods
 		this.newSession = this.newSession.bind(this)
+
 		this.checkUser = this.checkUser.bind(this)
+		this.search = this.search.bind(this)
+
 		this.createUser = this.createUser.bind(this)
+
+		this.sellIdentity = this.sellIdentity.bind(this)
+		this.buyIdentity = this.buyIdentity.bind(this)
+
 		this.signInUser = this.signInUser.bind(this)
 		this.signOutUser = this.signOutUser.bind(this)
+
 		this.getProfile = this.getProfile.bind(this)
+		this.updateProfile = this.updateProfile.bind(this)
+
+		this.followUser = this.followUser.bind(this)
+		this.unfollowUser = this.unfollowUser.bind(this)
+		this.indexFollowers = this.indexFollowers.bind(this)
+		this.indexFollowing = this.indexFollowing.bind(this)
+
+		this.openFeed = this.openFeed.bind(this)
+		this.closeFeed = this.closeFeed.bind(this)
+
+		this.createPost = this.createPost.bind(this)
+		this.indexPosts = this.indexPosts.bind(this)
+		this.getPost = this.getPost.bind(this)
+		this.amendPost = this.amendPost.bind(this)
+		this.retractPost = this.retractPost.bind(this)
+		this.promotePost = this.promotePost.bind(this)
+
+		this.createTopic = this.createTopic.bind(this)
+		this.indexTopics = this.indexTopics.bind(this)
+		this.getTopic = this.getTopic.bind(this)
+		this.updateTopic = this.updateTopic.bind(this)
+		this.sellTopic = this.sellTopic.bind(this)
+		this.buyTopic = this.buyTopic.bind(this)
+
+		this.createPod = this.createPod.bind(this)
+		this.indexPods = this.indexPods.bind(this)
+		this.getPod = this.getPod.bind(this)
+		this.updatePod = this.updatePod.bind(this)
+		this.sellPod = this.sellPod.bind(this)
+		this.buyPod = this.buyPod.bind(this)
+
+		this.react = this.react.bind(this)
+		this.getAffinity = this.getAffinity.bind(this)
+
+		this.createReport = this.createReport.bind(this)
+		this.indexReports = this.indexReports.bind(this)
+		this.getReport = this.getReport.bind(this)
+		this.voteReport = this.voteReport.bind(this)
+
+		this.indexSanctions = this.indexSanctions.bind(this)
+		this.getSanction = this.getSanction.bind(this)
+		this.indexRights = this.indexRights.bind(this)
+		this.getRight = this.getRight.bind(this)
+		this.updateRights = this.updateRights.bind(this)
+
+		this.getIntegrity = this.getIntegrity.bind(this)
+
+		this.indexTransactions = this.indexTransactions.bind(this)
+		this.createTransaction = this.createTransaction.bind(this)
+
+		this.indexNotifications = this.indexNotifications.bind(this)
+		this.clearNotification = this.clearNotification.bind(this)
+		this.clearAllNotifications = this.clearAllNotifications.bind(this)
 
 	}
 
@@ -353,18 +415,20 @@ export default class Podium {
 			this.ledger
 				.createUser(
 					this.config.getIn(["App", "RootUser", "ID"]),
-					this.network.get("Key"),
-					this.config.getIn(["App", "RootUser", "Name"]),
-					this.config.getIn(["App", "RootUser", "Bio"]),
+					this.network.get("Key")
 				)
+				.then(({ keyPair, address }) => {
+					return this.ledger
+						.user(address)
+						.keyIn(keyPair)
+				})
 
 				// Sign in root user, if already created
 				.catch(error => {
 					if (error instanceof LedgerError && error.code === 3) {
-						return this.ledger.user().signIn(
-							this.config.getIn(["App", "RootUser", "ID"]),
-							this.network.get("Key"),
-						)
+						return this.ledger
+							.user()
+							.signIn(this.network.get("Key"))
 					} else {
 						reject(error)
 					}
@@ -441,10 +505,7 @@ export default class Podium {
 
 				// Sign-in root user
 				.user()
-				.signIn(
-					this.config.getIn(["App", "RootUser", "ID"]),
-					this.network.get("Key")
-				)
+				.signIn(this.network.get("Key"))
 
 				// Store root user and return
 				.then(user => {
@@ -520,6 +581,7 @@ export default class Podium {
 		socket.on("buy identity", newTask(this.buyIdentity))
 
 		// Sign-in/out users
+		socket.on("key in", newTask(this.keyInUser))
 		socket.on("sign in", newTask(this.signInUser))
 		socket.on("sign out", newTask(this.signOutUser))
 
@@ -630,27 +692,23 @@ export default class Podium {
 		return new Promise((resolve, reject) => {
 
 			// Unpack data
-			let { identity, passphrase, name, bio, picture, ext } = args;
+			let { identity, passphrase } = args;
 			
 			// Store user on ledger
 			session.toClient("Creating User")
 			this.ledger
-				.createUser(
-					identity,
-					passphrase,
-					name,
-					bio,
-					picture,
-					ext
-				)
-				.then(user => {
+				.createUser(identity, passphrase)
+				.then(({ keypair, address }) => {
 
 					// Store user in database
 					session.toClient("Storing User")
-					this.db.addUser(identity, user.address)
+					this.db.addUser(identity, address)
 
-					//TODO - AWAIT FINALITY
-					resolve({ address: user.address })
+					// Return address and keypair
+					resolve({
+						keypair: keypair,
+						address: address
+					})
 
 				})
 				.catch(reject)
@@ -679,20 +737,46 @@ export default class Podium {
 
 // AUTHENTICATION
 
+	keyInUser(args, session) {
+		return new Promise((resolve, reject) => {
+
+			// Unpack data
+			let { keypair } = args;
+			session.toClient("Keying In")
+
+			// Sign in
+			this.ledger
+				.user()
+				.keyIn(keypair)
+				.then(user => {
+					this.sessions = this.sessions.set(session.id, user)
+					resolve({
+						address: user.address,
+						keypair: user.identity.keypair
+					})
+				})
+				.catch(reject)
+
+		})
+	}
+
 	signInUser(args, session) {
 		return new Promise((resolve, reject) => {
 
 			// Unpack data
-			let { identity, passphrase } = args;
+			let { passphrase } = args;
 			session.toClient("Signing In")
 
 			// Sign in
 			this.ledger
 				.user()
-				.signIn(identity, passphrase)
+				.signIn(passphrase)
 				.then(user => {
-					this.sessions.set(session.id, user)
-					resolve({ address: user.address })
+					this.sessions = this.sessions.set(session.id, user)
+					resolve({
+						address: user.address,
+						keypair: user.identity.keypair
+					})
 				})
 				.catch(reject)
 
@@ -768,7 +852,7 @@ export default class Podium {
 	}
 
 
-	followUser(args, session) {
+	unfollowUser(args, session) {
 		return new Promise((resolve, reject) => {
 
 			// Unpack data
@@ -793,7 +877,8 @@ export default class Podium {
 			session.toClient(`Fetching Followers of ${address}`)
 
 			// Retreive followers
-			session.user
+			this.ledger
+				.user(address)
 				.followerIndex(address)
 				.then(resolve)
 				.catch(reject)
@@ -806,16 +891,20 @@ export default class Podium {
 		return new Promise((resolve, reject) => {
 
 			// Unpack request
+			let { address } = args
 			session.toClient(`Fetching Users Followed by ${session.user.address}`)
 
 			// Retreive followers
-			session.user
+			this.ledger
+				.user(address)
 				.followingIndex()
 				.then(resolve)
 				.catch(reject)
 
 		})
 	}
+
+
 
 
 // FEED
@@ -827,24 +916,25 @@ export default class Podium {
 				.then(index => index.map(address => {
 
 					// Check if this user is already subscribed
-					if (!this.feeds[address]) {
-						this.feeds[address] = {
-							subscribed: 1,
-							user: this.ledger.user(address)
-						}
+					if (!this.feeds.get(address)) {
+						let user = this.ledger.user(address)
+						this.feeds = this.feeds
+							.setIn([address, "subscribed"], 1)
+							.setIn([address, "user"], user)
 					} else {
-						this.feeds[address].subscribed++
+						this.feeds = this.feeds.updateIn(
+							[address, "subscribed"],
+							s => s++
+						)
 					}
 
 					// Subscribe this user
-					this.feeds[address]
-						.user
+					this.feeds
+						.getIn(address, "user")
 						.onPost(address => session.toClient(address))
 
-					// Resolve
-					resolve()
-
 				}))
+				.then(resolve)
 				.catch(reject)
 		})
 	}
@@ -856,17 +946,18 @@ export default class Podium {
 				.then(index => index.map(address => {
 
 					// Reduce subscribers
-					this.feeds[address].subscribed--
+					this.feeds = this.feeds.updateIn(
+						[address, "subscribed"],
+						s => s--
+					)
 
 					// Check if this user has no more subscribers
-					if (this.feeds[address].subscribed <= 0) {
-						delete this.feeds[address]
+					if (this.feeds.getIn([address, "subscribed"]) <= 0) {
+						this.feeds = this.feeds.delete(address)
 					}
 
-					// Resolve
-					resolve()
-
 				}))
+				.then(resolve)
 				.catch(reject)
 		})
 	}
@@ -930,6 +1021,213 @@ export default class Podium {
 	promotePost(args, session) {
 		return new Promise((resolve, reject) => {
 
+		})
+	}
+
+
+
+
+// TOPICS
+
+	createTopic(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	indexTopics(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	getTopic(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	updateTopic(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	sellTopic(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	buyTopic(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+
+
+// PODS
+
+	createPod(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	indexPods(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	getPod(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	updatePod(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	sellPod(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	buyPod(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+
+
+// BIAS
+
+	react(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	getAffinity(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+
+
+// REPORTS
+
+	createReport(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	indexReports(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	getReport(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	voteReport(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+
+
+// SANCTIONS
+
+	indexSanctions(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	getSanction(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+
+
+// RIGHTS
+
+	getIntegrity(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	indexRights(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	getRight(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	updateRights(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+
+
+// TRANSACTIONS
+	
+	indexTransactions(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	createTransaction(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+
+
+// NOTIFICATIONS
+
+	indexNotifications(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	clearNotification(args, session) {
+		return new Promise((resolve, reject) => {
+			
+		})
+	}
+
+	clearAllNotifications(args, session) {
+		return new Promise((resolve, reject) => {
+			
 		})
 	}
 

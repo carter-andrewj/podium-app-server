@@ -45,8 +45,8 @@ export default class LedgerPaths {
 	forProfileOf(address) {
 		return RadixAccount.fromAddress(address)
 	}
-	forKeystoreOf(id, pw) {
-		return getAccount("podium-keystore-for-" + id.toLowerCase() + pw)
+	forKeystoreOf(passphrase) {
+		return getAccount("podium-keystore-for-" + passphrase)
 	}
 	forProfileWithID(id) {
 		return getAccount("podium-ownership-of-id-" + id.toLowerCase())

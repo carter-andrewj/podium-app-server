@@ -3,7 +3,7 @@
 	"App": {
 		"Name": "Podium",
 		"Type": "ALPHA",
-		"Flags": ["DEV", "BACON"],
+		"Flags": ["DEV", "NEPTUNE"],
 		"InitialMint": 1000000000000,
 		"RootUser": {
 			"ID": "Podium",

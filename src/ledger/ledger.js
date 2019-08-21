@@ -491,11 +491,7 @@ export default class Ledger {
 
 	createUser(
 			id,			// Podium @ ID of new user account
-			pw,			// Password for new user account
-			name,		// Display name of new user account
-			bio,		// Bio of new user account
-			picture,
-			ext
+			pw			// Password for new user account
 		) {
 
 		// Registers a new podium user.
@@ -539,12 +535,7 @@ export default class Ledger {
 						// Generate user public record
 						const profileAccount = this.path.forProfileOf(address)
 						const profilePayload = {
-							record: "profile",
-							type: "profile",
 							id: id,
-							name: name,
-							bio: bio || "",
-							picture: "",
 							address: address
 						}
 
@@ -587,12 +578,11 @@ export default class Ledger {
 						}
 
 						// Encrypt keypair
-						const keyStore = this.path.forKeystoreOf(id, pw);
-						RadixKeyStore.encryptKey(identity.keyPair, pw)
-							.then(async encryptedKey => {
-
-								// Store registration records
-								return this.storeRecords(
+						const keyStore = this.path.forKeystoreOf(pw);
+						RadixKeyStore
+							.encryptKey(identity.keyPair, pw)
+							.then(encryptedKey => {
+								this.storeRecords(
 									identity,
 									[keyStore], encryptedKey,
 									[profileAccount], profilePayload,
@@ -601,25 +591,11 @@ export default class Ledger {
 									[ownershipAccount], ownershipPayload,
 									placeholderAccounts, placeholderPayload
 								)
-
 							})
-							//TODO - Auto-follow Podium master account
-							.then(() => this.user(address).signIn(id, pw))
-							.then(resolve)
-							// .then(activeUser => {
-
-							// 	// Set user's profile picture
-							// 	let picturePromise;
-							// 	if (picture) {
-							// 		picturePromise = activeUser
-							// 			.updateProfilePicture(picture, ext)
-							// 			.then(() => resolve(activeUser))
-							// 			.catch(reject)
-							// 	} else {
-							// 		resolve(activeUser)
-							// 	}
-
-							// })
+							.then(() => resolve({
+								keyPair: identity.keyPair,
+								address: address
+							}))
 							.catch(reject)
 
 					}
