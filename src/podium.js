@@ -56,6 +56,7 @@ export default class Podium {
 		this.sellIdentity = this.sellIdentity.bind(this)
 		this.buyIdentity = this.buyIdentity.bind(this)
 
+		this.keyInUser = this.keyInUser.bind(this)
 		this.signInUser = this.signInUser.bind(this)
 		this.signOutUser = this.signOutUser.bind(this)
 
@@ -76,6 +77,9 @@ export default class Podium {
 		this.amendPost = this.amendPost.bind(this)
 		this.retractPost = this.retractPost.bind(this)
 		this.promotePost = this.promotePost.bind(this)
+
+		this.getPDMTransactions = this.getPDMTransactions.bind(this)
+		this.getADMTransactions = this.getADMTransactions.bind(this)
 
 		this.createTopic = this.createTopic.bind(this)
 		this.indexTopics = this.indexTopics.bind(this)
@@ -411,37 +415,34 @@ export default class Podium {
 	newNation() {
 		return new Promise((resolve, reject) => {
 
+			// Unpack root credentials
+			const rootID = this.config.getIn(["App", "RootUser", "ID"])
+			const rootKey = this.network.get("Key")
+
 			// Create the root user
 			this.ledger
-				.createUser(
-					this.config.getIn(["App", "RootUser", "ID"]),
-					this.network.get("Key")
+				.createUser(rootID, rootKey)
+				.then(({ keyPair, address }) => this.ledger
+					.user(address)
+					.keyIn(keyPair, rootKey)
 				)
-				.then(({ keyPair, address }) => {
-					return this.ledger
-						.user(address)
-						.keyIn(keyPair)
-				})
 
 				// Sign in root user, if already created
 				.catch(error => {
 					if (error instanceof LedgerError && error.code === 3) {
 						return this.ledger
 							.user()
-							.signIn(this.network.get("Key"))
+							.signIn(rootID, rootKey)
 					} else {
 						reject(error)
 					}
 				})
 
 				// Store the root user and mint Podium
-				.then(user => {
+				.then(({ user }) => {
 
 					// Add user to database
-					this.db.addUser(
-						this.config.getIn(["App", "RootUser", "ID"]),
-						user.address
-					)
+					this.db.addUser(rootID, user.address)
 
 					// Store root user
 					this.rootUser = user
@@ -505,10 +506,13 @@ export default class Podium {
 
 				// Sign-in root user
 				.user()
-				.signIn(this.network.get("Key"))
+				.signIn(
+					this.config.getIn(["App", "RootUser", "ID"]),
+					this.network.get("Key")
+				)
 
 				// Store root user and return
-				.then(user => {
+				.then(({ user }) => {
 					console.log("   * Root User Signed-In")
 					this.rootUser = user
 					resolve()
@@ -530,8 +534,8 @@ export default class Podium {
 		console.log(`${pre} new connection`)
 		socket.emit("connection", true)
 
-		function newTask(fn, auth=false) {
-			return (data, done) => {
+		function newTask(fn, retry=1, auth=false) {
+			return async (data, done) => {
 
 				// Ensure user is authenticated, if required
 				let user = this.sessions.get(socket.id)
@@ -554,15 +558,47 @@ export default class Podium {
 					console.log(`${pre} task: ${fn.name}(${JSON.stringify(data.args)})`)
 
 					// Perform task
-					fn(data.args, session)
-						.then(result => {
-							console.log(`${pre} result: ${fn.name} => ${JSON.stringify(result)}`)
-							done({ result: result })
+					let output;
+					let attempts = 0;
+					while (!output) {
+						output = await new Promise(resolve => {
+
+							// Run task
+							fn(data.args, session)
+
+								// Return result
+								.then(result => {
+									console.log(
+										`${pre} result: ${fn.name} =>` +
+										` ${JSON.stringify(result)}`
+									)
+									resolve({ result: result })
+								})
+
+								// Handle errors and retry
+								.catch(error => {
+									if (error instanceof LedgerError
+											&& error.code === 2
+											&& attempts < retry) {
+										attempts = attempts + 1
+										console.log(
+											`${pre} timed out: ${fn.name} =>` +
+											` retrying [${attempts}/${retry}]`
+										)
+									} else {
+										console.log(
+											`${pre} failed: ${fn.name}` +
+											` => ${error.message}`
+										)
+										resolve({ error: error })
+									}
+								})
+
 						})
-						.catch(error => {
-							console.log(`${pre} failed: ${fn.name} => ${error.message}`)
-							done({ error: error })
-						})
+					}
+
+					// Return result
+					done(output)
 
 				}
 
@@ -581,17 +617,17 @@ export default class Podium {
 		socket.on("buy identity", newTask(this.buyIdentity))
 
 		// Sign-in/out users
-		socket.on("key in", newTask(this.keyInUser))
-		socket.on("sign in", newTask(this.signInUser))
+		socket.on("key in", newTask(this.keyInUser, 3))
+		socket.on("sign in", newTask(this.signInUser, 3))
 		socket.on("sign out", newTask(this.signOutUser))
 
 		// Profile
 		socket.on("load profile", newTask(this.getProfile))
-		socket.on("update profile", newTask(this.updateProfile, true))
+		socket.on("update profile", newTask(this.updateProfile, 0, true))
 
 		// Follow users
-		socket.on("follow", newTask(this.followUser, true))
-		socket.on("unfollow", newTask(this.unfollowUser, true))
+		socket.on("follow", newTask(this.followUser, 0, true))
+		socket.on("unfollow", newTask(this.unfollowUser, 0, true))
 		socket.on("index followers", newTask(this.indexFollowers))
 		socket.on("index following", newTask(this.indexFollowing))
 
@@ -600,23 +636,27 @@ export default class Podium {
 		socket.on("close feed", newTask(this.closeFeed))
 
 		// Posts
-		socket.on("create post", newTask(this.createPost, true))
+		socket.on("create post", newTask(this.createPost, 0, true))
 		socket.on("index posts", newTask(this.indexPosts))
 		socket.on("load post", newTask(this.getPost))
-		socket.on("amend post", newTask(this.amendPost, true))
-		socket.on("retract post", newTask(this.retractPost, true))
-		socket.on("promote post", newTask(this.promotePost, true))
+		socket.on("amend post", newTask(this.amendPost, 0, true))
+		socket.on("retract post", newTask(this.retractPost, 0, true))
+		socket.on("promote post", newTask(this.promotePost, 0, true))
+
+		// Tokens
+		socket.on("load PDM", newTask(this.getPDMTransactions))
+		socket.on("load ADM", newTask(this.getADMTransactions))
 
 		// Topics
-		socket.on("create topic", newTask(this.createTopic, true))
+		socket.on("create topic", newTask(this.createTopic, 0, true))
 		socket.on("index topics", newTask(this.indexTopics))
 		socket.on("load topic", newTask(this.getTopic))
-		socket.on("update topic", newTask(this.updateTopic, true))
-		socket.on("sell topic", newTask(this.sellTopic, true))
-		socket.on("buy topic", newTask(this.buyTopic, true))
+		socket.on("update topic", newTask(this.updateTopic, 0, true))
+		socket.on("sell topic", newTask(this.sellTopic, 0, true))
+		socket.on("buy topic", newTask(this.buyTopic, 0, true))
 
 		// Pods
-		socket.on("create pod", newTask(this.createPod, true))
+		socket.on("create pod", newTask(this.createPod, 0, true))
 		socket.on("index pods", newTask(this.indexPods))
 		socket.on("load pod", newTask(this.getPod))
 		socket.on("update pod", newTask(this.updatePod))
@@ -624,14 +664,14 @@ export default class Podium {
 		socket.on("buy pod", newTask(this.buyPod))
 
 		// React
-		socket.on("reaction", newTask(this.react, true))
-		socket.on("load affinity", newTask(this.getAffinity, true))
+		socket.on("reaction", newTask(this.react, 0, true))
+		socket.on("load affinity", newTask(this.getAffinity, 0, true))
 
 		// Reporting
-		socket.on("create report", newTask(this.createReport, true))
+		socket.on("create report", newTask(this.createReport, 0, true))
 		socket.on("index reports", newTask(this.indexReports))
 		socket.on("load report", newTask(this.getReport))
-		socket.on("vote report", newTask(this.voteReport, true))
+		socket.on("vote report", newTask(this.voteReport, 0, true))
 
 		// Sanctions
 		socket.on("index sanctions", newTask(this.indexSanctions))
@@ -640,7 +680,7 @@ export default class Podium {
 		// Rights
 		socket.on("index rights", newTask(this.indexRights))
 		socket.on("load right", newTask(this.getRight))
-		socket.on("update rights", newTask(this.updateRights, true))
+		socket.on("update rights", newTask(this.updateRights, 0, true))
 
 		// Integrity
 		socket.on("load integrity", newTask(this.getIntegrity))
@@ -648,11 +688,11 @@ export default class Podium {
 		// Tokens
 		socket.on("index transactions", newTask(this.indexTransactions))
 		socket.on("load transaction", newTask(this.getTransaction))
-		socket.on("create transaction", newTask(this.createTransaction, true))
+		socket.on("create transaction", newTask(this.createTransaction, 0, true))
 
 		// Notification
-		socket.on("index notifications", newTask(this.indexNotifications, true))
-		socket.on("load notification", newTask(this.getNotification, true))
+		socket.on("index notifications", newTask(this.indexNotifications, 0, true))
+		socket.on("load notification", newTask(this.getNotification, 0, true))
 
 	}
 
@@ -698,7 +738,7 @@ export default class Podium {
 			session.toClient("Creating User")
 			this.ledger
 				.createUser(identity, passphrase)
-				.then(({ keypair, address }) => {
+				.then(({ keyPair, address }) => {
 
 					// Store user in database
 					session.toClient("Storing User")
@@ -706,7 +746,7 @@ export default class Podium {
 
 					// Return address and keypair
 					resolve({
-						keypair: keypair,
+						keyPair: keyPair,
 						address: address
 					})
 
@@ -741,18 +781,18 @@ export default class Podium {
 		return new Promise((resolve, reject) => {
 
 			// Unpack data
-			let { keypair } = args;
+			let { keyPair, passphrase } = args;
 			session.toClient("Keying In")
 
 			// Sign in
 			this.ledger
 				.user()
-				.keyIn(keypair)
-				.then(user => {
+				.keyIn(keyPair, passphrase)
+				.then(({ user }) => {
 					this.sessions = this.sessions.set(session.id, user)
 					resolve({
 						address: user.address,
-						keypair: user.identity.keypair
+						keyPair: keyPair
 					})
 				})
 				.catch(reject)
@@ -764,18 +804,18 @@ export default class Podium {
 		return new Promise((resolve, reject) => {
 
 			// Unpack data
-			let { passphrase } = args;
+			let { identity, passphrase } = args;
 			session.toClient("Signing In")
 
 			// Sign in
 			this.ledger
 				.user()
-				.signIn(passphrase)
-				.then(user => {
+				.signIn(identity, passphrase)
+				.then(({ user, keyPair }) => {
 					this.sessions = this.sessions.set(session.id, user)
 					resolve({
 						address: user.address,
-						keypair: user.identity.keypair
+						keyPair: keyPair
 					})
 				})
 				.catch(reject)
@@ -820,13 +860,10 @@ export default class Podium {
 
 	updateProfile(args, session) {
 		return new Promise((resolve, reject) => {
-
-			// Update profile
 			session.user
-				.setProfile(args)
+				.updateProfile(args)
 				.then(resolve)
 				.catch(reject)
-
 		})
 	}
 
@@ -1002,25 +1039,42 @@ export default class Podium {
 
 	getPost(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	amendPost(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	retractPost(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	promotePost(args, session) {
 		return new Promise((resolve, reject) => {
+			resolve({})
+		})
+	}
 
+
+
+
+// TOKENS
+
+	getPDMTransactions(args, session) {
+		return new Promise((resolve, reject) => {
+			resolve({})
+		})
+	}
+
+	getADMTransactions(args, session) {
+		return new Promise((resolve, reject) => {
+			resolve({})
 		})
 	}
 
@@ -1031,37 +1085,37 @@ export default class Podium {
 
 	createTopic(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	indexTopics(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve([])
 		})
 	}
 
 	getTopic(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	updateTopic(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	sellTopic(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve(true)
 		})
 	}
 
 	buyTopic(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve(true)
 		})
 	}
 
@@ -1071,37 +1125,37 @@ export default class Podium {
 
 	createPod(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	indexPods(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve([])
 		})
 	}
 
 	getPod(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	updatePod(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	sellPod(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve(true)
 		})
 	}
 
 	buyPod(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve(true)
 		})
 	}
 
@@ -1111,13 +1165,13 @@ export default class Podium {
 
 	react(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve(true)
 		})
 	}
 
 	getAffinity(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
@@ -1127,25 +1181,25 @@ export default class Podium {
 
 	createReport(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	indexReports(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve([])
 		})
 	}
 
 	getReport(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	voteReport(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve(true)
 		})
 	}
 
@@ -1155,13 +1209,13 @@ export default class Podium {
 
 	indexSanctions(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve([])
 		})
 	}
 
 	getSanction(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
@@ -1171,25 +1225,25 @@ export default class Podium {
 
 	getIntegrity(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	indexRights(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve([])
 		})
 	}
 
 	getRight(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
 	updateRights(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
@@ -1199,13 +1253,13 @@ export default class Podium {
 	
 	indexTransactions(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve([])
 		})
 	}
 
 	createTransaction(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve({})
 		})
 	}
 
@@ -1215,19 +1269,19 @@ export default class Podium {
 
 	indexNotifications(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve([])
 		})
 	}
 
 	clearNotification(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve(true)
 		})
 	}
 
 	clearAllNotifications(args, session) {
 		return new Promise((resolve, reject) => {
-			
+			resolve(true)
 		})
 	}
 

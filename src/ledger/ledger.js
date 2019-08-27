@@ -578,11 +578,13 @@ export default class Ledger {
 						}
 
 						// Encrypt keypair
-						const keyStore = this.path.forKeystoreOf(pw);
+						let key;
+						const keyStore = this.path.forKeystoreOf(id, pw);
 						RadixKeyStore
 							.encryptKey(identity.keyPair, pw)
 							.then(encryptedKey => {
-								this.storeRecords(
+								key = encryptedKey
+								return this.storeRecords(
 									identity,
 									[keyStore], encryptedKey,
 									[profileAccount], profilePayload,
@@ -593,7 +595,7 @@ export default class Ledger {
 								)
 							})
 							.then(() => resolve({
-								keyPair: identity.keyPair,
+								keyPair: key,
 								address: address
 							}))
 							.catch(reject)

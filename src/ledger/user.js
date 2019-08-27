@@ -27,30 +27,42 @@ export default class User {
 
 // SIGN IN
 
-	keyIn(keyPair) {
-		const ident = new RadixSimpleIdentity(keyPair);
-		if (!this.address) {
-			this.address = ident.account.getAddress();
-		}
-		return new ActiveUser(this.ledger, ident)
+	keyIn(keyPair, passphrase) {
+		return new Promise((resolve, reject) => {
+			RadixKeyStore
+				.decryptKey(keyPair, passphrase)
+				.then(key => {
+					const ident = new RadixSimpleIdentity(key);
+					if (!this.address) {
+						this.address = ident.account.getAddress();
+					}
+					resolve({
+						user: new ActiveUser(this.ledger, ident),
+						keyPair: keyPair
+					})
+				})
+				.catch(reject)
+		})
 	}
 
-	signIn(passphrase) {
+	signIn(identity, passphrase) {
 		this.ledger.debugOut("Signing In: ", passphrase)
 		return new Promise((resolve, reject) => {
+			let keyPair;
+			const path = this.ledger.path
+				.forKeystoreOf(identity, passphrase)
 			this.ledger
 
 				// Retrieve keypair
-				.getLatest(this.ledger.path.forKeystoreOf(passphrase))
+				.getLatest(path)
 
-				// Decrypt keypair
+				// Decrypt keypair and retrieve identity
 				.then(encryptedKey => {
+					keyPair = encryptedKey.toJS()
 					this.ledger.debugOut("Received Keypair")
-					return RadixKeyStore.decryptKey(encryptedKey.toJS(), passphrase)
+					return this.keyIn(keyPair, passphrase)
 				})
 
-				// Create identity
-				.then(this.keyIn)
 				.then(resolve)
 				.catch(reject)
 
@@ -533,75 +545,92 @@ export class ActiveUser extends User {
 
 // USER PROFILES
 
-	updateProfileName(name) {
-		this.ledger.debugOut(`User-${this.address} is updating their display name to "${name}"`)
+	updateProfile(profile) {
+		this.ledger.debugOut(`User-${this.address} is updating their profile`)
 		return new Promise(async (resolve, reject) => {
-			
+
 			// Generate user public record
 			const profileAccount = this.ledger.path.forProfileOf(this.address);
-			const profilePayload = {
-				record: "profile",
-				type: "image",
-				name: name
-			}
+			const profilePayload = profile
 
 			// Write record
 			this.ledger
 				.storeRecord(this.identity, [profileAccount], profilePayload)
-				.then(() => resolve())
-				.catch(error => reject(error))
+				.then(resolve)
+				.catch(reject)		
 
 		})
 	}
 
-	updateProfileBio(bio) {
-		this.ledger.debugOut(`User-${this.address} is updating their bio to "${bio}"`)
-		return new Promise(async (resolve, reject) => {
+	// updateProfileName(name) {
+	// 	this.ledger.debugOut(`User-${this.address} is updating their display name to "${name}"`)
+	// 	return new Promise(async (resolve, reject) => {
 			
-			// Generate user public record
-			const profileAccount = this.ledger.path.forProfileOf(this.address);
-			const profilePayload = {
-				record: "profile",
-				type: "bio",
-				bio: bio
-			}
+	// 		// Generate user public record
+	// 		const profileAccount = this.ledger.path.forProfileOf(this.address);
+	// 		const profilePayload = {
+	// 			record: "profile",
+	// 			type: "image",
+	// 			name: name
+	// 		}
 
-			// Write record
-			this.ledger
-				.storeRecord(this.identity, [profileAccount], profilePayload)
-				.then(() => resolve())
-				.catch(error => reject(error))
+	// 		// Write record
+	// 		this.ledger
+	// 			.storeRecord(this.identity, [profileAccount], profilePayload)
+	// 			.then(() => resolve())
+	// 			.catch(error => reject(error))
 
-		})
-	}
+	// 	})
+	// }
 
-	updateProfilePicture(image, ext) {
-		this.ledger.debugOut(`User-${this.address} is updating their profile picture`)
-		return new Promise(async (resolve, reject) => {
+	// updateProfileBio(bio) {
+	// 	this.ledger.debugOut(`User-${this.address} is updating their bio to "${bio}"`)
+	// 	return new Promise(async (resolve, reject) => {
 			
-			// Store media
-			this.createMedia(image, ext)
-				.then(url => {
+	// 		// Generate user public record
+	// 		const profileAccount = this.ledger.path.forProfileOf(this.address);
+	// 		const profilePayload = {
+	// 			record: "profile",
+	// 			type: "bio",
+	// 			bio: bio
+	// 		}
 
-					// Generate user public record
-					const profileAccount = this.ledger.path.forProfileOf(this.address)
-					const profilePayload = {
-						record: "profile",
-						type: "image",
-						picture: url
-					}
+	// 		// Write record
+	// 		this.ledger
+	// 			.storeRecord(this.identity, [profileAccount], profilePayload)
+	// 			.then(() => resolve())
+	// 			.catch(error => reject(error))
 
-					// Write record
-					this.ledger
-						.storeRecord(this.identity, [profileAccount], profilePayload)
-						.then(() => resolve())
-						.catch(error => reject(error))
+	// 	})
+	// }
 
-				})
-				.catch(error => reject(error))
+	// updateProfilePicture(image, ext) {
+	// 	this.ledger.debugOut(`User-${this.address} is updating their profile picture`)
+	// 	return new Promise(async (resolve, reject) => {
+			
+	// 		// Store media
+	// 		this.createMedia(image, ext)
+	// 			.then(url => {
 
-		})
-	}
+	// 				// Generate user public record
+	// 				const profileAccount = this.ledger.path.forProfileOf(this.address)
+	// 				const profilePayload = {
+	// 					record: "profile",
+	// 					type: "image",
+	// 					picture: url
+	// 				}
+
+	// 				// Write record
+	// 				this.ledger
+	// 					.storeRecord(this.identity, [profileAccount], profilePayload)
+	// 					.then(() => resolve())
+	// 					.catch(error => reject(error))
+
+	// 			})
+	// 			.catch(error => reject(error))
+
+	// 	})
+	// }
 
 
 
