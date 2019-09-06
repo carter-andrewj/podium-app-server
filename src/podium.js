@@ -45,6 +45,10 @@ export default class Podium {
 		this.sessions = Map()
 		this.feeds = Map()
 
+
+		this.initAccounts = this.initAccounts.bind(this)
+
+
 		// Methods
 		this.newSession = this.newSession.bind(this)
 
@@ -160,17 +164,36 @@ export default class Podium {
 		})
 	}
 
-	mediaStore(key, image, ext="png") {
+	mediaFromStore(key) {
 		return new Promise((resolve, reject) => {
-			this.S3
+			this.store
+				.getObject({
+					Bucket: this.config.getIn(["Store", "Media"]),
+					Key: key
+				})
+				.promise()
+				.then(item => resolve(item.Body))
+				.catch(error => {
+					if (error.code = "NoSuchKey") {
+						resolve(null)
+					} else {
+						reject()
+					}
+				})
+		})
+	}
+
+	mediaToStore(key, image, ext="png") {
+		return new Promise((resolve, reject) => {
+			this.store
 				.putObject({
-					Bucket: this.config.get("media"),
+					Bucket: this.config.getIn(["Store", "Media"]),
 					Key: `${key}.${ext}`,
 					Body: Buffer.from(image, "base64"),
 					ContentType: `image/${ext}`
 				})
 				.promise()
-				.then(resolve)
+				.then(() => resolve(key))
 				.catch(reject)
 		})
 	}
@@ -204,11 +227,11 @@ export default class Podium {
 
 						// Unpack network ID
 						const id = networkID.get("ID")
-						const version = parseInt(id.split("|").splice(-1,1)) + 1
-						console.log(` - Creating Network v${version} from ${id}`)
+						const subversion = parseInt(id.split("|").splice(-1,1)) + 1
+						console.log(` - Creating Network iteration ${subversion} from ${id}`)
 
 						// Create new network version
-						return this.newNetwork(version)
+						return this.newNetwork(subversion)
 					
 					} else if (networkID) {
 
@@ -236,7 +259,7 @@ export default class Podium {
 
 
 
-	newNetwork(version=0) {
+	newNetwork(subversion=0) {
 		return new Promise((resolve, reject) => {
 
 			// Generate new network ID
@@ -244,7 +267,8 @@ export default class Podium {
 				this.config.getIn(["App", "Name"]),
 				this.config.getIn(["App", "Type"]),
 				...this.config.getIn(["App", "Flags"]),
-				version
+				this.config.getIn(["App", "Version"]),
+				subversion
 			].join("|")
 			const key = uuid()
 			this.network = Map({
@@ -448,6 +472,13 @@ export default class Podium {
 					this.rootUser = user
 					console.log("   * Created Root User")
 
+					// Unpack profile data
+					const rootName = this.config.getIn(["App", "RootUser", "Name"])
+					const rootBio = this.config.getIn(["App", "RootUser", "Bio"])
+					const rootPost = this.config.getIn(["App", "RootUser", "FirstPost"])
+					const rootPicture = this.config.getIn(["App", "RootUser", "Picture"])
+					const extn = rootPicture.split(".")[1]
+
 					// Set up initial ledger configuration
 					return Promise.all([
 
@@ -464,15 +495,38 @@ export default class Podium {
 
 						// Make initial post
 						this.rootUser
-							.createPost(this.config.getIn(["App", "RootUser", "FirstPost"]))
+							.createPost(rootPost)
 							.then(() => {
-								console.log("   * Created First Post")
+								console.log("   * Created First Post from Root")
+								return
+							}),
+
+						// Set up root profile
+						this.mediaFromStore(`reserved/${rootPicture}`)
+							.then(picture => this.registerMedia(
+								this.rootUser, picture, extn
+							))
+							.then(picAddress => {
+								const profile = {
+									name: rootName,
+									bio: rootBio,
+									picture: picAddress,
+									pictureType: extn
+								}
+								return this.rootUser
+									.updateProfile(profile)
+							})
+							.then(() => {
+								console.log("   * Created Root Profile")
 								return
 							}),
 
 						// Create Governance
 						this.ledger
-							.createDomain(this.constitution, this.rootUser.identity)
+							.createDomain(
+								this.constitution,
+								this.rootUser.identity
+							)
 							.then(() => {
 								console.log("   * Created Root Domain")
 								return
@@ -481,6 +535,9 @@ export default class Podium {
 					])
 
 				})
+
+				// Create reserved accounts
+				.then(this.initAccounts)
 
 				// Save network as launched
 				.then(() => {
@@ -520,6 +577,95 @@ export default class Podium {
 				.catch(reject)
 
 		})
+	}
+
+
+
+// RESERVED ACCOUNTS
+
+	initAccounts() {
+		return new Promise((resolve, reject) => {
+			console.log(" - Creating Reserved Accounts")
+			this.fromStore("accounts")
+				.then(accounts => Promise.all(
+					accounts.map(account => {
+
+						// Unpack account
+						const identity = account.get("identity")
+						const passphrase = account.get("passphrase")
+						const profile = account.get("profile").toJS()
+						const picture = profile.picture
+						const extn = picture ? picture.split(".")[1] : null
+						const post = account.get("post")
+
+						// Create account
+						return this.ledger
+
+							// Create user
+							.createUser(identity, passphrase)
+							
+							// Sign-in and pre-emptively load profile picture
+							.then(({ keyPair, address }) => {
+								this.db.addUser(identity, address)
+								return Promise.all([
+									this.ledger
+										.user()
+										.keyIn(keyPair, passphrase),
+									picture ?
+										this.mediaFromStore(`reserved/${picture}`)
+										: null
+								])
+							})
+
+							// Follow root account, create initial post,
+							// register profile picture, and update profile
+							.then(([ { user }, pic ]) => Promise.all([
+
+								// Follow the root user
+								user.follow(this.rootUser.address),
+
+								// Create first post, if provided
+								post ? user.createPost(post) : null,
+
+								// Create profile
+								picture ?
+									this.registerMedia(user, pic, extn)
+										.then(address => {
+											profile.picture = address
+											profile.pictureType = extn
+											return user.updateProfile(profile)
+										})
+									:
+									user.updateProfile(profile)
+
+							]))
+
+							// Report success
+							.then(() => {
+								console.log(`   * Created @${identity}`)
+							})
+
+							// Handle errors
+							.catch(console.error)
+
+					})
+				))
+				.then(resolve)
+				.catch(reject)
+		})
+	}
+
+
+
+// MEDIA STORAGE
+
+	registerMedia(user, media, ext="png") {
+		return new Promise((resolve, reject) => user
+			.createMedia(media, ext)
+			.then(address => this.mediaToStore(address, media, ext))
+			.then(resolve)
+			.catch(reject)
+		)
 	}
 
 
@@ -585,6 +731,7 @@ export default class Podium {
 											`${pre} timed out: ${fn.name} =>` +
 											` retrying [${attempts}/${retry}]`
 										)
+										resolve(false)
 									} else {
 										console.log(
 											`${pre} failed: ${fn.name}` +
@@ -859,11 +1006,23 @@ export default class Podium {
 	}
 
 	updateProfile(args, session) {
-		return new Promise((resolve, reject) => {
+		return new Promise(async (resolve, reject) => {
+
+			// Handle profile pictures
+			if (args.picture) {
+				args.picture = await this.registerMedia(
+					session.user,
+					args.picture,
+					args.pictureExtn
+				)
+			}
+
+			// Update profile
 			session.user
 				.updateProfile(args)
 				.then(resolve)
 				.catch(reject)
+
 		})
 	}
 
@@ -967,7 +1126,7 @@ export default class Podium {
 
 					// Subscribe this user
 					this.feeds
-						.getIn(address, "user")
+						.getIn([address, "user"])
 						.onPost(address => session.toClient(address))
 
 				}))
@@ -975,7 +1134,7 @@ export default class Podium {
 				.catch(reject)
 		})
 	}
-
+	
 	closeFeed(args, session) {
 		return new Promise((resolve, reject) => {
 			session.user

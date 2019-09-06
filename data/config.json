@@ -1,38 +1,37 @@
 {
-
-	"App": {
-		"Name": "Podium",
-		"Type": "ALPHA",
-		"Flags": ["DEV", "JUPITER"],
-		"InitialMint": 1000000000000,
-		"RootUser": {
-			"ID": "Podium",
-			"Name": "Podium",
-			"Bio": "Official Account of the Podium Team",
-			"FirstPost": "Welcome to Podium! Thank you for joining us."
-		}
-	},
-
-	"Server": {
-		"Port": 3210
-	},
-
-	"Store": {
-		"Media": "media.podium-network.com/",
-		"SizeLimit": "5mb"
-	},
-
-	"Ledger": {
-		"Debug": false,
-		"Universe": "alphanet",
-		"Timeout": 30,
-		"ConnectionLifetime": 0
-	},
-
-	"Database": {
-		"AutoSave": true,
-		"AutoLoad": true,
-		"BackupFrequency": 60000
-	}
-
+    "App": {
+        "Name": "Podium",
+        "Type": "ALPHA",
+        "Flags": [
+            "DEV",
+            "MARS"
+        ],
+        "Version": 18,
+        "InitialMint": 1000000000000,
+        "RootUser": {
+            "ID": "Podium",
+            "Name": "Podium",
+            "Bio": "Official Account of the Podium Team",
+            "FirstPost": "Welcome to Podium! Thank you for joining us.",
+            "Picture": "podium.png"
+        }
+    },
+    "Server": {
+        "Port": 3210
+    },
+    "Store": {
+        "Media": "media.podium-network.com",
+        "SizeLimit": "5mb"
+    },
+    "Ledger": {
+        "Debug": false,
+        "Universe": "alphanet",
+        "Timeout": 30,
+        "ConnectionLifetime": 0
+    },
+    "Database": {
+        "AutoSave": true,
+        "AutoLoad": true,
+        "BackupFrequency": 60000
+    }
 }

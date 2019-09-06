@@ -5,10 +5,14 @@
   "main": "index.js",
   "scripts": {
     "start": "npm run sync && nodemon --exec babel-node src/index.js",
+    "start-clean": "npm run clean && npm run sync && nodemon --exec babel-node src/index.js",
     "go": "nodemon --exec babel-node src/index.js",
     "build": "npm run sync && babel src -d build",
     "serve": "node build/index.js",
-    "sync": "aws s3 sync ./data s3://podium-config --exclude '*DS_Store'"
+    "sync": "npm run sync-config && npm run sync-media",
+    "sync-config": "aws s3 sync ./data s3://podium-config --exclude '*DS_Store'",
+    "sync-media": "aws s3 sync ./media s3://media.podium-network.com/reserved",
+    "clean": "aws s3api delete-object --bucket podium-config --key live.json && node version.js"
   },
   "author": "",
   "license": "ISC",

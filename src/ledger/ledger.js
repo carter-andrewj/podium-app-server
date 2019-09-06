@@ -222,8 +222,8 @@ export default class Ledger {
 
 			// Wait for promises to complete
 			Promise.all(storing)
-				.then(() => resolve())
-				.catch(error => reject(error))
+				.then(resolve)
+				.catch(reject)
 
 		})
 	}

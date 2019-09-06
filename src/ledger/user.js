@@ -648,19 +648,14 @@ export class ActiveUser extends User {
 			// Register media on ledger
 			const mediaAccount = this.ledger.path.forMedia(media)
 			const mediaAddress = mediaAccount.getAddress()
-			const mediaURL = `${mediaAddress}.${ext}`
 
 			// Generate file record
-			//TODO - Ensure media address is independent of
-			//		 the uploading user so the same image
-			//		 uploaded by different users is still
-			//		 only stored once on S3.
 			const mediaPayload = {
 				record: "media",
 				type: "image", 		//TODO - Handle gifs/videos/audio
 				address: mediaAddress,
-				url: mediaURL,
-				uploader: this.address
+				ext: ext,
+				owner: this.address
 			}
 
 			// Register media on ledger
@@ -669,8 +664,7 @@ export class ActiveUser extends User {
 			this.ledger.debugOut(`User-${this.address} is registering Media-${mediaAddress}`)
 			this.ledger
 				.storeRecord(this.identity, [mediaAccount], mediaPayload)
-				// .then(() => this.podium.storeMedia(media, mediaURL))
-				.then(() => resolve(mediaURL))
+				.then(() => resolve(mediaAddress))
 				.catch(error => reject(error))
 
 		})
