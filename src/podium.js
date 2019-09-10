@@ -856,9 +856,8 @@ export default class Podium {
 			session.toClient(`Searching for ${target}`)
 
 			// Perform search
-			this.db.search(target, among)
-				.then(resolve)
-				.catch(reject)
+			let results = this.db.search(target, among)
+			resolve({ results: results })
 
 		})
 	}

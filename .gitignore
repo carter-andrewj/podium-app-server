@@ -23,5 +23,5 @@ yarn-error.log*
 
 *.db
 
-/data
-/media
+/data/accounts.json
+/media/*

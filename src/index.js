@@ -5,7 +5,6 @@ dotenv.config()
 
 import Podium from './podium';
 
-
 // Ensure global variables are set
 if (!process.env.AWS_ACCESS_KEY) {
 	throw "AWS ACCESS KEY not found"

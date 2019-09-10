@@ -1,5 +1,7 @@
 import loki from 'lokijs';
 
+import { Map, fromJS } from 'immutable';
+
 
 
 export default class Database {
@@ -80,15 +82,13 @@ export default class Database {
 // SEARCH
 
 	search(target, among=["users"]) {
-		const records = this.users
-			.find({ search: { "$regex": target.toLowerCase() }})
-		return fromJS(records)
-			.map(rec => Map({
-				address: rec.get("address"),
-				id: rec.get("id"),
-				searchid: rec.get("searchid")
-			}))
-			.toList()
+		return this.users
+			.find({
+				search: {
+					"$regex": target.toLowerCase()
+				}
+			})
+			.map(r => r.address)
 	}
 
 
