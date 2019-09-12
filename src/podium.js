@@ -693,6 +693,10 @@ export default class Podium {
 					const session = {
 						id: socket.id,
 						user: user,
+						channel: response => socket.emit(
+							data.task,
+							response
+						),
 						toClient: msg => socket.emit(
 							data.task,
 							{ update: msg }
@@ -1040,7 +1044,7 @@ export default class Podium {
 			// Follow user
 			session.user
 				.follow(address)
-				.then(resolve)
+				.then(() => resolve(true))
 				.catch(reject)
 
 		})
@@ -1057,7 +1061,7 @@ export default class Podium {
 			// Unfollow user
 			session.user
 				.unfollow(address)
-				.then(resolve)
+				.then(() => resolve(true))
 				.catch(reject)
 
 		})
@@ -1126,7 +1130,9 @@ export default class Podium {
 					// Subscribe this user
 					this.feeds
 						.getIn([address, "user"])
-						.onPost(address => session.toClient(address))
+						.onPost(address => session.channel({
+							post: address
+						}))
 
 				}))
 				.then(resolve)
@@ -1195,9 +1201,15 @@ export default class Podium {
 		})
 	}
 
-	getPost(args, session) {
+	getPost({ address }, session) {
 		return new Promise((resolve, reject) => {
-			resolve({})
+			this.ledger
+				.post(address)
+				.content()
+				.then(content => resolve({
+					content: content
+				}))
+				.catch(reject)
 		})
 	}
 
