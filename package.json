@@ -8,11 +8,15 @@
     "start-clean": "npm run clean && npm run sync && nodemon --exec babel-node src/index.js",
     "go": "nodemon --exec babel-node src/index.js",
     "build": "npm run sync && babel src -d build",
+    "build-without-sync": "babel src -d build",
     "serve": "node build/index.js",
     "sync": "npm run sync-config && npm run sync-media",
     "sync-config": "aws s3 sync ./data s3://podium-config --exclude '*DS_Store'",
     "sync-media": "aws s3 sync ./media s3://media.podium-network.com/reserved",
-    "clean": "aws s3api delete-object --bucket podium-config --key live.json && node version.js"
+    "clean": "aws s3api delete-object --bucket podium-config --key live.json && node version.js",
+    "restart": "pm2 startOrRestart ecosystem.config.js",
+    "deploy": "pm2 deploy ecosystem.config.js production",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
@@ -33,6 +37,7 @@
     "@babel/node": "^7.4.5",
     "@babel/preset-env": "^7.4.5",
     "@babel/register": "^7.4.4",
-    "nodemon": "^1.19.1"
+    "nodemon": "^1.19.1",
+    "pm2": "^3.5.1"
   }
 }
