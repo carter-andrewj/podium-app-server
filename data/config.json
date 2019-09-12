@@ -17,7 +17,7 @@
         }
     },
     "Server": {
-        "Port": 3210
+        "Port": 3000
     },
     "Store": {
         "Media": "media.podium-network.com",

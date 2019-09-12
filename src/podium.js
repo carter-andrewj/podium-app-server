@@ -336,7 +336,8 @@ export default class Podium {
 
 					// Make services
 					const port = this.config.getIn(["Server", "Port"])
-					let server = http.Server(express())
+					this.web = express()
+					let server = http.Server(this.web)
 
 					let ledger = new Ledger(
 						this.config.get("Ledger"),
@@ -409,6 +410,11 @@ export default class Podium {
 					// Log progress
 					this.status = "Opening Websocket"
 					console.log(" - Opening Websocket")
+
+					// Create simple server
+					this.web.get("/", (_, response) => {
+						response.send("Podium Server Online!")
+					})
 
 					// Create websocket service
 					this.websocket = socketio(this.server)
