@@ -1,7 +1,7 @@
 module.exports = {
   apps: [{
     name: 'podium-app-server',
-    script: './src/index.js'
+    script: './build/index.js'
   }],
   deploy: {
     production: {
@@ -11,7 +11,7 @@ module.exports = {
       ref: 'origin/master',
       repo: 'https://github.com/carter-andrewj/podium-app-server.git',
       path: '/home/ubuntu/podium-app-server',
-      'post-deploy': 'npm install && pm2 startOrRestart ecosystem.config.js'
+      'post-deploy': 'npm install && npm run build && pm2 startOrRestart ecosystem.config.js'
     }
   }
 }
