@@ -11,7 +11,7 @@ module.exports = {
       ref: 'origin/master',
       repo: 'https://github.com/carter-andrewj/podium-app-server.git',
       path: '/home/ubuntu/podium-app-server',
-      'post-deploy': 'npm install && npm run build && pm2 startOrRestart ecosystem.config.js'
+      'post-deploy': 'npm install && npm run build-without-sync && pm2 startOrRestart ecosystem.config.js'
     }
   }
 }

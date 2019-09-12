@@ -8,6 +8,7 @@
     "start-clean": "npm run clean && npm run sync && nodemon --exec babel-node src/index.js",
     "go": "nodemon --exec babel-node src/index.js",
     "build": "npm run sync && babel src -d build",
+    "build-without-sync": "babel src -d build",
     "serve": "node build/index.js",
     "sync": "npm run sync-config && npm run sync-media",
     "sync-config": "aws s3 sync ./data s3://podium-config --exclude '*DS_Store'",
