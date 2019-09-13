@@ -73,7 +73,9 @@ export default class Podium {
 		this.indexFollowing = this.indexFollowing.bind(this)
 
 		this.openFeed = this.openFeed.bind(this)
+		this.subcribe = this.subscribe.bind(this)
 		this.closeFeed = this.closeFeed.bind(this)
+		this.unsubscribe = this.unsubscribe.bind(this)
 
 		this.createPost = this.createPost.bind(this)
 		this.indexPosts = this.indexPosts.bind(this)
@@ -1116,58 +1118,80 @@ export default class Podium {
 
 	openFeed(args, session) {
 		return new Promise((resolve, reject) => {
+
+			// Subscribe to self
+			this.subscribe(session.user.address, session)
+
+			// Subscribe to followers
 			session.user
 				.followingIndex()
-				.then(index => index.map(address => {
-
-					// Check if this user is already subscribed
-					if (!this.feeds.get(address)) {
-						let user = this.ledger.user(address)
-						this.feeds = this.feeds
-							.setIn([address, "subscribed"], 1)
-							.setIn([address, "user"], user)
-					} else {
-						this.feeds = this.feeds.updateIn(
-							[address, "subscribed"],
-							s => s++
-						)
-					}
-
-					// Subscribe this user
-					this.feeds
-						.getIn([address, "user"])
-						.onPost(address => session.channel({
-							post: address
-						}))
-
-				}))
+				.then(index => index.map(
+					address => this.subscribe(address, session)
+				))
 				.then(resolve)
 				.catch(reject)
+
 		})
+	}
+
+
+	subscribe(address, session) {
+
+		// Check if this user is already subscribed
+		if (!this.feeds.get(address)) {
+			let user = this.ledger.user(address)
+			this.feeds = this.feeds
+				.setIn([address, "subscribed"], 1)
+				.setIn([address, "user"], user)
+		} else {
+			this.feeds = this.feeds.updateIn(
+				[address, "subscribed"],
+				s => s++
+			)
+		}
+
+		// Subscribe this user
+		this.feeds
+			.getIn([address, "user"])
+			.onPost(address => session.channel({
+				post: address
+			}))
+
 	}
 	
+
 	closeFeed(args, session) {
 		return new Promise((resolve, reject) => {
+
+			// Unsubscribe self
+			this.unsubscribe(session.user.address)
+
+			// Unsubscribe from followed users
 			session.user
 				.followingIndex()
-				.then(index => index.map(address => {
-
-					// Reduce subscribers
-					this.feeds = this.feeds.updateIn(
-						[address, "subscribed"],
-						s => s--
-					)
-
-					// Check if this user has no more subscribers
-					if (this.feeds.getIn([address, "subscribed"]) <= 0) {
-						this.feeds = this.feeds.delete(address)
-					}
-
-				}))
+				.then(index => index.map(this.unsubscribe))
 				.then(resolve)
 				.catch(reject)
+
 		})
 	}
+
+
+	unsubscribe(address) {
+
+		// Reduce subscribers
+		this.feeds = this.feeds.updateIn(
+			[address, "subscribed"],
+			s => s--
+		)
+
+		// Check if this user has no more subscribers
+		if (this.feeds.getIn([address, "subscribed"]) <= 0) {
+			this.feeds = this.feeds.delete(address)
+		}
+
+	}
+
 
 
 
@@ -1183,7 +1207,7 @@ export default class Podium {
 
 			// Make post
 			session.user
-				.post(text, references, parent)
+				.createPost(text, Map(references), parent)
 				.then(resolve)
 				.catch(reject)
 

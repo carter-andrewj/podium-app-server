@@ -779,7 +779,7 @@ export class ActiveUser extends User {
 
 	createPost(
 			text,					// Content of new post
-			references = Map(),		// References contained in new post
+			references = {},		// References contained in new post
 			parentAddress = null,	// Address of post being replied to (if any)
 		) {
 		this.ledger.debugOut(`User-${this.address} is posting: "${text}"`)
@@ -818,51 +818,45 @@ export class ActiveUser extends User {
 				const postAddress = postAccount.getAddress();
 
 				// Unpack references
-				const mentions = references.get("mentions") || List()
+				const mentions = references.mentions || []
 
 				// Handle long posts
-				const textList = List(chunkText(text, 128))
+				const textList = chunkText(text, 128)
 
 				// Build post record
 				const postRecord = {
 
-					record: "post",
-					type: "post",
-
-					text: textList.first(),
+					text: textList[0],
 					cost: cost,
 
 					entry: 0,
-					entries: textList.size,
+					entries: textList.length,
 
 					address: postAddress,
 
 					author: this.address,
 					parent: (parent) ? parentAddress : null,
-					parentAuthor: (parent) ? parent.get("author") : null,
-					grandparent: (parent) ? parent.get("parent") : null,
+					// parentAuthor: (parent) ? parent.get("author") : null,
+					// grandparent: (parent) ? parent.get("parent") : null,
 
 					origin: (parent) ? parent.get("origin") : postAddress,
 					depth: (parent) ? parent.get("depth") + 1 : 0,
-					chain: (parent && parent.get("author") === this.address) ?
-						parent.get("chain") + 1 : 0, 
+					// chain: (parent && parent.get("author") === this.address) ?
+					// 	parent.get("chain") + 1 : 0, 
 
-					mentions: mentions.toJS(),
+					mentions: mentions,
 
 				}
 
 				// Build destination accounts for index record
 				const indexAccount = this.ledger.path.forPostsBy(this.address)
 				const indexRecord = {
-					record: "post",
-					type: "index",
 					address: postAddress
 				}
 
 				// Build transaction record
 				const transactionAccount = this.ledger.path.forPODTransactionsOf(this.address)
 				const transactionRecord = {
-					record: "transaction",
 					type: "POD",
 					to: postAddress,
 					for: "post",
@@ -889,8 +883,8 @@ export class ActiveUser extends User {
 				
 				// Write additional post entries, if required
 				let entryWrite = []
-				if (textList.size > 1) {
-					entryWrite = textList
+				if (textList.length > 1) {
+					entryWrite = List(textList)
 						.rest()
 						.map((t, i) => this.ledger.storeRecord(
 							this.identity,
@@ -922,13 +916,10 @@ export class ActiveUser extends User {
 				} 
 
 				// Wait for all writes to complete
-				Promise.all([postWrite, ...entryWrite, replyWrite])
-					.then(() => {
-						var post = this.ledger
-							.post(postAddress, this.address)
-						resolve(post)
-					})
-					.catch(error => reject(error))
+				Promise
+					.all([postWrite, ...entryWrite, replyWrite])
+					.then(() => resolve(postRecord))
+					.catch(reject)
 
 			}
 
